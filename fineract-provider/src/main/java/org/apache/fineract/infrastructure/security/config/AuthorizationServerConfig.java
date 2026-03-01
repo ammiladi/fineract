@@ -19,10 +19,12 @@
 package org.apache.fineract.infrastructure.security.config;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.businessdate.service.BusinessDateReadPlatformService;
 import org.apache.fineract.infrastructure.core.config.FineractProperties;
 import org.apache.fineract.infrastructure.core.domain.FineractRequestContextHolder;
@@ -46,10 +48,12 @@ import org.apache.fineract.infrastructure.security.service.TwoFactorService;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.apache.fineract.useradministration.domain.Role;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
 import org.springframework.core.annotation.Order;
@@ -72,6 +76,8 @@ import org.springframework.security.oauth2.server.authorization.config.annotatio
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
@@ -154,7 +160,7 @@ public class AuthorizationServerConfig {
 
     @Bean
     @Order(3)
-    public SecurityFilterChain protectedEndpoints(HttpSecurity http) throws Exception {
+    public SecurityFilterChain protectedEndpoints(HttpSecurity http, JwtDecoder jwtDecoder) throws Exception {
         http
                 // TODO: Make it configurable
                 .csrf(AbstractHttpConfigurer::disable).authorizeHttpRequests(auth -> {
@@ -163,8 +169,8 @@ public class AuthorizationServerConfig {
                         auth.anyRequest().hasAuthority("TWOFACTOR_AUTHENTICATED");
                     }
                 }).formLogin(form -> form.loginPage("/login").authenticationDetailsSource(tenantAuthDetailsSource()).permitAll())
-                .oauth2ResourceServer(
-                        resourceServer -> resourceServer.jwt(jwt -> jwt.jwtAuthenticationConverter(authenticationConverter())))
+                .oauth2ResourceServer(resourceServer -> resourceServer
+                        .jwt(jwt -> jwt.decoder(jwtDecoder).jwtAuthenticationConverter(authenticationConverter())))
                 .addFilterAfter(tenantAwareAuthenticationFilter(), SecurityContextHolderFilter.class)//
                 .addFilterAfter(businessDateFilter(), TenantAwareAuthenticationFilter.class) //
                 .addFilterAfter(requestResponseFilter(), ExceptionTranslationFilter.class) //
@@ -263,6 +269,22 @@ public class AuthorizationServerConfig {
             List<String> scope = appUser.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toList());
             context.getClaims().claim("scope", scope).claim("role", roles).claim("tenant", details.getTenantId());
         };
+    }
+
+    @Bean
+    @ConditionalOnExpression("!#{T(org.apache.commons.lang3.StringUtils).isBlank(@environment.getProperty('fineract.security.oauth2.allowed-issuer-uris'))}")
+    public JwtDecoder jwtDecoder(
+            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}") String defaultIssuerUri) {
+        String allowed = fineractProperties.getSecurity().getOauth2().getAllowedIssuerUris();
+        List<String> uris = Arrays.stream(allowed.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        if (uris.isEmpty()) {
+            throw new IllegalStateException(
+                    "fineract.security.oauth2.allowed-issuer-uris (FINERACT_SECURITY_OAUTH2_ALLOWED_ISSUERS) must be non-empty when set.");
+        }
+        if (uris.size() == 1) {
+            return JwtDecoders.fromIssuerLocation(uris.get(0));
+        }
+        return new MultiIssuerJwtDecoder(uris);
     }
 
     @Bean
