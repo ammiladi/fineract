@@ -19,6 +19,7 @@
 package org.apache.fineract.infrastructure.security.config;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -48,12 +49,11 @@ import org.apache.fineract.infrastructure.security.service.TwoFactorService;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.apache.fineract.useradministration.domain.Role;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
 import org.springframework.core.annotation.Order;
@@ -272,14 +272,19 @@ public class AuthorizationServerConfig {
     }
 
     @Bean
-    @ConditionalOnExpression("!#{T(org.apache.commons.lang3.StringUtils).isBlank(@environment.getProperty('fineract.security.oauth2.allowed-issuer-uris'))}")
-    public JwtDecoder jwtDecoder(
-            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}") String defaultIssuerUri) {
-        String allowed = fineractProperties.getSecurity().getOauth2().getAllowedIssuerUris();
-        List<String> uris = Arrays.stream(allowed.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+    public JwtDecoder jwtDecoder(Environment env) {
+        String allowed = env.getProperty("fineract.security.oauth2.allowed-issuer-uris", "");
+        String defaultIssuerUri = env.getProperty("spring.security.oauth2.resourceserver.jwt.issuer-uri", "");
+        List<String> uris = new ArrayList<>();
+        if (StringUtils.isNotBlank(allowed)) {
+            uris = Arrays.stream(allowed.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        }
+        if (uris.isEmpty() && StringUtils.isNotBlank(defaultIssuerUri)) {
+            uris = List.of(defaultIssuerUri.trim());
+        }
         if (uris.isEmpty()) {
             throw new IllegalStateException(
-                    "fineract.security.oauth2.allowed-issuer-uris (FINERACT_SECURITY_OAUTH2_ALLOWED_ISSUERS) must be non-empty when set.");
+                    "When OAuth2 is enabled, set either spring.security.oauth2.resourceserver.jwt.issuer-uri or fineract.security.oauth2.allowed-issuer-uris (FINERACT_SECURITY_OAUTH_ALLOWED_ISSUERS, comma-separated list of Keycloak issuer URIs).");
         }
         if (uris.size() == 1) {
             return JwtDecoders.fromIssuerLocation(uris.get(0));

@@ -530,8 +530,6 @@ public class FineractProperties {
         public static class FineractSecurityOAuth2Properties {
 
             private boolean enabled;
-
-            private String allowedIssuerUris;
             private ClientProperties client;
 
             @Getter
