@@ -23,7 +23,6 @@ import static org.apache.fineract.infrastructure.security.vote.SelfServiceUserAu
 import static org.springframework.security.authorization.AuthenticatedAuthorizationManager.fullyAuthenticated;
 import static org.springframework.security.authorization.AuthorityAuthorizationManager.hasAuthority;
 import static org.springframework.security.authorization.AuthorizationManagers.allOf;
-import static org.springframework.security.web.util.matcher.AntPathRequestMatcher.antMatcher;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -72,6 +71,7 @@ import org.springframework.security.web.access.ExceptionTranslationFilter;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.www.BasicAuthenticationEntryPoint;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -118,46 +118,46 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http //
-                .securityMatcher(antMatcher("/api/**")).authorizeHttpRequests((auth) -> {
+                .securityMatcher(AntPathRequestMatcher.antMatcher("/api/**")).authorizeHttpRequests((auth) -> {
                     List<AuthorizationManager<RequestAuthorizationContext>> authorizationManagers = new ArrayList<>();
                     authorizationManagers.add(fullyAuthenticated());
                     if (fineractProperties.getSecurity().getTwoFactor().isEnabled()) {
                         authorizationManagers.add(hasAuthority("TWOFACTOR_AUTHENTICATED"));
                     }
                     if (fineractProperties.getModule().getSelfService().isEnabled()) {
-                        auth.requestMatchers(antMatcher(HttpMethod.POST, "/api/*/self/authentication")).permitAll() //
-                                .requestMatchers(antMatcher(HttpMethod.POST, "/api/*/self/registration")).permitAll() //
-                                .requestMatchers(antMatcher(HttpMethod.POST, "/api/*/self/registration/user")).permitAll(); //
+                        auth.requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.POST, "/api/*/self/authentication")).permitAll() //
+                                .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.POST, "/api/*/self/registration")).permitAll() //
+                                .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.POST, "/api/*/self/registration/user")).permitAll(); //
                         authorizationManagers.add(selfServiceUserAuthManager());
                     }
-                    auth.requestMatchers(antMatcher(HttpMethod.OPTIONS, "/api/**")).permitAll() //
-                            .requestMatchers(antMatcher(HttpMethod.POST, "/api/*/echo")).permitAll() //
-                            .requestMatchers(antMatcher(HttpMethod.POST, "/api/*/authentication")).permitAll() //
-                            .requestMatchers(antMatcher(HttpMethod.PUT, "/api/*/instance-mode")).permitAll() //
+                    auth.requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.OPTIONS, "/api/**")).permitAll() //
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.POST, "/api/*/echo")).permitAll() //
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.POST, "/api/*/authentication")).permitAll() //
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.PUT, "/api/*/instance-mode")).permitAll() //
                             // businessdate
-                            .requestMatchers(antMatcher(HttpMethod.GET, "/api/*/businessdate/*"))
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/api/*/businessdate/*"))
                             .hasAnyAuthority("ALL_FUNCTIONS", "ALL_FUNCTIONS_READ", "READ_BUSINESS_DATE")
-                            .requestMatchers(antMatcher(HttpMethod.POST, "/api/*/businessdate"))
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.POST, "/api/*/businessdate"))
                             .hasAnyAuthority("ALL_FUNCTIONS", "ALL_FUNCTIONS_WRITE", "UPDATE_BUSINESS_DATE")
                             // external
-                            .requestMatchers(antMatcher(HttpMethod.GET, "/api/*/externalevents/configuration"))
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/api/*/externalevents/configuration"))
                             .hasAnyAuthority("ALL_FUNCTIONS", "ALL_FUNCTIONS_READ", "READ_EXTERNAL_EVENT_CONFIGURATION")
-                            .requestMatchers(antMatcher(HttpMethod.PUT, "/api/*/externalevents/configuration"))
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.PUT, "/api/*/externalevents/configuration"))
                             .hasAnyAuthority("ALL_FUNCTIONS", "ALL_FUNCTIONS_WRITE", "UPDATE_EXTERNAL_EVENT_CONFIGURATION")
                             // cache
-                            .requestMatchers(antMatcher(HttpMethod.GET, "/api/*/caches"))
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/api/*/caches"))
                             .hasAnyAuthority("ALL_FUNCTIONS", "ALL_FUNCTIONS_READ", "READ_CACHE")
-                            .requestMatchers(antMatcher(HttpMethod.PUT, "/api/*/caches"))
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.PUT, "/api/*/caches"))
                             .hasAnyAuthority("ALL_FUNCTIONS", "ALL_FUNCTIONS_WRITE", "UPDATE_CACHE")
                             // currency
-                            .requestMatchers(antMatcher(HttpMethod.GET, "/api/*/currencies"))
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/api/*/currencies"))
                             .hasAnyAuthority("ALL_FUNCTIONS", "ALL_FUNCTIONS_READ", "READ_CURRENCY")
-                            .requestMatchers(antMatcher(HttpMethod.POST, "/api/*/currencies"))
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.POST, "/api/*/currencies"))
                             .hasAnyAuthority("ALL_FUNCTIONS", "ALL_FUNCTIONS_WRITE", "UPDATE_CURRENCY")
                             // ...
-                            .requestMatchers(antMatcher(HttpMethod.POST, "/api/*/twofactor/validate")).fullyAuthenticated() //
-                            .requestMatchers(antMatcher("/api/*/twofactor")).fullyAuthenticated() //
-                            .requestMatchers(antMatcher("/api/**"))
+                            .requestMatchers(AntPathRequestMatcher.antMatcher(HttpMethod.POST, "/api/*/twofactor/validate")).fullyAuthenticated() //
+                            .requestMatchers(AntPathRequestMatcher.antMatcher("/api/*/twofactor")).fullyAuthenticated() //
+                            .requestMatchers(AntPathRequestMatcher.antMatcher("/api/**"))
                             .access(allOf(authorizationManagers.toArray(new AuthorizationManager[0]))); //
                 }).httpBasic((httpBasic) -> httpBasic.authenticationEntryPoint(basicAuthenticationEntryPoint())) //
                 .csrf(AbstractHttpConfigurer::disable) // NOSONAR only creating a
@@ -182,7 +182,7 @@ public class SecurityConfig {
         }
 
         if (serverProperties.getSsl().isEnabled()) {
-            http.requiresChannel(channel -> channel.requestMatchers(antMatcher("/api/**")).requiresSecure());
+            http.requiresChannel(channel -> channel.requestMatchers(AntPathRequestMatcher.antMatcher("/api/**")).requiresSecure());
         }
 
         if (fineractProperties.getSecurity().getHsts().isEnabled()) {
@@ -228,7 +228,7 @@ public class SecurityConfig {
         TenantAwareBasicAuthenticationFilter filter = new TenantAwareBasicAuthenticationFilter(authenticationManagerBean(),
                 basicAuthenticationEntryPoint(), toApiJsonSerializer, configurationDomainService, cacheWritePlatformService,
                 userNotificationService, basicAuthTenantDetailsService, businessDateReadPlatformService);
-        filter.setRequestMatcher(antMatcher("/api/**"));
+        filter.setRequestMatcher(AntPathRequestMatcher.antMatcher("/api/**"));
         return filter;
     }
 
