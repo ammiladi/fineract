@@ -45,5 +45,5 @@ jobs:
             -Djib.to.auth.username=${{secrets.DOCKERHUB_USER}} \
             -Djib.to.auth.password=${{secrets.DOCKERHUB_TOKEN}} \
             -Djib.from.platforms=linux/amd64,linux/arm64 \
-            -Djib.to.image=DOCKERHUB_REGISTRY/fineract \
+            -Djib.to.image=${{DOCKERHUB_REGISTRY}}/fineract \
             -Djib.to.tags=$TAGS
