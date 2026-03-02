@@ -19,6 +19,7 @@
 package org.apache.fineract.infrastructure.security.config;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -50,6 +51,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
 import org.springframework.core.annotation.Order;
@@ -72,6 +74,10 @@ import org.springframework.security.oauth2.server.authorization.config.annotatio
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoders;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
@@ -154,7 +160,7 @@ public class AuthorizationServerConfig {
 
     @Bean
     @Order(3)
-    public SecurityFilterChain protectedEndpoints(HttpSecurity http) throws Exception {
+    public SecurityFilterChain protectedEndpoints(HttpSecurity http, JwtDecoder jwtDecoder) throws Exception {
         http
                 // TODO: Make it configurable
                 .csrf(AbstractHttpConfigurer::disable).authorizeHttpRequests(auth -> {
@@ -163,8 +169,8 @@ public class AuthorizationServerConfig {
                         auth.anyRequest().hasAuthority("TWOFACTOR_AUTHENTICATED");
                     }
                 }).formLogin(form -> form.loginPage("/login").authenticationDetailsSource(tenantAuthDetailsSource()).permitAll())
-                .oauth2ResourceServer(
-                        resourceServer -> resourceServer.jwt(jwt -> jwt.jwtAuthenticationConverter(authenticationConverter())))
+                .oauth2ResourceServer(resourceServer -> resourceServer
+                        .jwt(jwt -> jwt.decoder(jwtDecoder).jwtAuthenticationConverter(authenticationConverter())))
                 .addFilterAfter(tenantAwareAuthenticationFilter(), SecurityContextHolderFilter.class)//
                 .addFilterAfter(businessDateFilter(), TenantAwareAuthenticationFilter.class) //
                 .addFilterAfter(requestResponseFilter(), ExceptionTranslationFilter.class) //
@@ -262,6 +268,30 @@ public class AuthorizationServerConfig {
             List<String> roles = appUser.getRoles().stream().map(Role::getName).toList();
             List<String> scope = appUser.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toList());
             context.getClaims().claim("scope", scope).claim("role", roles).claim("tenant", details.getTenantId());
+        };
+    }
+
+    @Bean
+    public JwtDecoder jwtDecoder(Environment env) {
+        // Allowed issuers (comma-separated)
+        String[] allowedIssuersArray = env.getProperty("FINERACT_SECURITY_OAUTH_ALLOWED_ISSUERS", "").split(",");
+        List<String> allowedIssuers = Arrays.stream(allowedIssuersArray).map(String::trim).filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+
+        return token -> {
+            // First, decode the token header/payload without verifying
+            Jwt unverifiedJwt = JwtDecoders.fromIssuerLocation(allowedIssuers.get(0)) // temporary, just to parse
+                    .decode(token);
+
+            String tokenIssuer = unverifiedJwt.getIssuer().toString();
+
+            if (!allowedIssuers.contains(tokenIssuer)) {
+                throw new JwtException("Invalid JWT issuer: " + tokenIssuer);
+            }
+
+            // Use issuer-specific decoder to fully decode and verify
+            JwtDecoder decoder = JwtDecoders.fromIssuerLocation(tokenIssuer);
+            return decoder.decode(token);
         };
     }
 
