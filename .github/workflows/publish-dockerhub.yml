@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - develop
+      - 1.*
     tags:
       - 1.*
 permissions:
