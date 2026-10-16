@@ -389,8 +389,8 @@ public class InteropServiceImpl implements InteropService {
                 throw new InteropTransferAlreadyOnHoldException(savingsAccount.getExternalId().getValue(), transferCode);
             }
 
-            PaymentDetail paymentDetail = instance(findPaymentType(), savingsAccount.getExternalId().getValue(), null, getRoutingCode(),
-                    transferCode, null);
+            PaymentDetail paymentDetail = instance(findPaymentType(request.getNote()), savingsAccount.getExternalId().getValue(), null,
+                    getRoutingCode(), transferCode, null);
             SavingsAccountTransaction holdTransaction = SavingsAccountTransaction.holdAmount(savingsAccount, savingsAccount.office(),
                     paymentDetail, transactionDate, Money.of(savingsAccount.getCurrency(), total), false);
             MonetaryCurrency accountCurrency = savingsAccount.getCurrency().copy();
@@ -434,7 +434,7 @@ public class InteropServiceImpl implements InteropService {
             }
 
             BigDecimal totalTransferAmount = calculateTotalTransferAmount(request, savingsAccount);
-            if (holdTransaction.getAmount().compareTo(totalTransferAmount) != 0) {
+            if (holdTransaction.getAmount().compareTo(totalTransferAmount) < 0) {
                 throw new InteropTransferMissingException(savingsAccount.getExternalId().getValue(), transferCode);
             }
 
@@ -455,11 +455,13 @@ public class InteropServiceImpl implements InteropService {
 
             SavingsTransactionBooleanValues transactionValues = new SavingsTransactionBooleanValues(false, true, true, false, false);
             transaction = savingsAccountService.handleWithdrawal(savingsAccount, fmt, transactionDate, request.getAmount().getAmount(),
-                    instance(findPaymentType(), savingsAccount.getExternalId().getValue(), null, getRoutingCode(), transferCode, null),
+                    instance(findPaymentType(request.getNote()), savingsAccount.getExternalId().getValue(), null, getRoutingCode(),
+                            transferCode, null),
                     transactionValues, backdatedTxnsAllowedTill);
         } else {
             transaction = savingsAccountService.handleDeposit(savingsAccount, fmt, transactionDate, request.getAmount().getAmount(),
-                    instance(findPaymentType(), savingsAccount.getExternalId().getValue(), null, getRoutingCode(), transferCode, null),
+                    instance(findPaymentType(request.getNote()), savingsAccount.getExternalId().getValue(), null, getRoutingCode(),
+                            transferCode, null),
                     false, true, backdatedTxnsAllowedTill);
         }
 
@@ -617,17 +619,28 @@ public class InteropServiceImpl implements InteropService {
         return DateTimeFormatter.ofPattern(dateFormat).withLocale(locale);
     }
 
-    PaymentType findPaymentType() {
+    PaymentType findPaymentType(String note) {
+        String wanted = cardPayment(note) ? "Card" : "Transfer";
         List<PaymentType> paymentTypes = paymentTypeRepository.findAll();
         for (PaymentType paymentType : paymentTypes) {
-            if (!paymentType.getIsCashPayment()) {
+            if (wanted.equalsIgnoreCase(paymentType.getName())) {
                 return paymentType;
             }
-            // TODO: for now first not cash is retured:
-            // 1. must be added as initial setup,
-            // 2. if more than one non-cashe type added then update this code
+        }
+        for (PaymentType paymentType : paymentTypes) {
+            if (!Boolean.TRUE.equals(paymentType.getIsCashPayment())) {
+                return paymentType;
+            }
         }
         return null;
+    }
+
+    private static boolean cardPayment(String note) {
+        if (note == null) {
+            return false;
+        }
+        String normalized = note.toLowerCase(Locale.ROOT);
+        return normalized.contains("monétique") || normalized.contains("monetique") || normalized.contains("card payment");
     }
 
     private SavingsAccountTransaction findTransaction(SavingsAccount savingsAccount, String transactionCode, Integer transactionTypeValue) {
