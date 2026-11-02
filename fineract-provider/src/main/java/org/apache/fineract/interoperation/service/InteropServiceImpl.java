@@ -661,6 +661,7 @@ public class InteropServiceImpl implements InteropService {
             return false;
         }
         String blob = note.toLowerCase(Locale.ROOT);
+        // Require explicit card / Monétique signals — never treat plain GSMA/Mojaloop cash-in as card.
         return blob.contains("\"type\":\"card\"")
                 || blob.contains("\"type\": \"card\"")
                 || blob.contains("\"paymenttype\":\"card payment\"")
@@ -668,9 +669,7 @@ public class InteropServiceImpl implements InteropService {
                 || blob.contains("card payment")
                 || blob.contains("card refund")
                 || blob.contains("monétique")
-                || blob.contains("monetique")
-                || blob.contains("merchant-")
-                || (blob.contains("merchant") && (blob.contains("payment") || blob.contains("refund")));
+                || blob.contains("monetique");
     }
 
     private SavingsAccountTransaction findTransaction(SavingsAccount savingsAccount, String transactionCode, Integer transactionTypeValue) {
