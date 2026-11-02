@@ -389,8 +389,8 @@ public class InteropServiceImpl implements InteropService {
                 throw new InteropTransferAlreadyOnHoldException(savingsAccount.getExternalId().getValue(), transferCode);
             }
 
-            PaymentDetail paymentDetail = instance(findPaymentType(), savingsAccount.getExternalId().getValue(), null, getRoutingCode(),
-                    transferCode, null);
+            PaymentDetail paymentDetail = instance(findPaymentType(request.getNote()), savingsAccount.getExternalId().getValue(), null,
+                    getRoutingCode(), transferCode, null);
             SavingsAccountTransaction holdTransaction = SavingsAccountTransaction.holdAmount(savingsAccount, savingsAccount.office(),
                     paymentDetail, transactionDate, Money.of(savingsAccount.getCurrency(), total), false);
             MonetaryCurrency accountCurrency = savingsAccount.getCurrency().copy();
@@ -455,11 +455,13 @@ public class InteropServiceImpl implements InteropService {
 
             SavingsTransactionBooleanValues transactionValues = new SavingsTransactionBooleanValues(false, true, true, false, false);
             transaction = savingsAccountService.handleWithdrawal(savingsAccount, fmt, transactionDate, request.getAmount().getAmount(),
-                    instance(findPaymentType(), savingsAccount.getExternalId().getValue(), null, getRoutingCode(), transferCode, null),
+                    instance(findPaymentType(request.getNote()), savingsAccount.getExternalId().getValue(), null, getRoutingCode(),
+                            transferCode, null),
                     transactionValues, backdatedTxnsAllowedTill);
         } else {
             transaction = savingsAccountService.handleDeposit(savingsAccount, fmt, transactionDate, request.getAmount().getAmount(),
-                    instance(findPaymentType(), savingsAccount.getExternalId().getValue(), null, getRoutingCode(), transferCode, null),
+                    instance(findPaymentType(request.getNote()), savingsAccount.getExternalId().getValue(), null, getRoutingCode(),
+                            transferCode, null),
                     false, true, backdatedTxnsAllowedTill);
         }
 
@@ -618,16 +620,57 @@ public class InteropServiceImpl implements InteropService {
     }
 
     PaymentType findPaymentType() {
+        return findPaymentType(null);
+    }
+
+    /**
+     * Prefer Card Payment for Monétique / card notes; otherwise Bank Transfer; else first non-cash type.
+     */
+    PaymentType findPaymentType(String note) {
         List<PaymentType> paymentTypes = paymentTypeRepository.findAll();
+        String preferred = isCardSettlementNote(note) ? "Card Payment" : "Bank Transfer";
+        PaymentType named = findPaymentTypeByName(paymentTypes, preferred);
+        if (named == null && "Card Payment".equals(preferred)) {
+            named = findPaymentTypeByName(paymentTypes, "Card");
+        }
+        if (named != null) {
+            return named;
+        }
         for (PaymentType paymentType : paymentTypes) {
             if (!paymentType.getIsCashPayment()) {
                 return paymentType;
             }
-            // TODO: for now first not cash is retured:
-            // 1. must be added as initial setup,
-            // 2. if more than one non-cashe type added then update this code
         }
         return null;
+    }
+
+    private static PaymentType findPaymentTypeByName(List<PaymentType> paymentTypes, String name) {
+        if (name == null || name.isBlank() || paymentTypes == null) {
+            return null;
+        }
+        for (PaymentType paymentType : paymentTypes) {
+            if (paymentType != null && name.equalsIgnoreCase(paymentType.getName())) {
+                return paymentType;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isCardSettlementNote(String note) {
+        if (note == null || note.isBlank()) {
+            return false;
+        }
+        String blob = note.toLowerCase(Locale.ROOT);
+        return blob.contains("\"type\":\"card\"")
+                || blob.contains("\"type\": \"card\"")
+                || blob.contains("\"paymenttype\":\"card payment\"")
+                || blob.contains("\"paymenttype\": \"card payment\"")
+                || blob.contains("card payment")
+                || blob.contains("card refund")
+                || blob.contains("monétique")
+                || blob.contains("monetique")
+                || blob.contains("merchant-")
+                || (blob.contains("merchant") && (blob.contains("payment") || blob.contains("refund")));
     }
 
     private SavingsAccountTransaction findTransaction(SavingsAccount savingsAccount, String transactionCode, Integer transactionTypeValue) {
