@@ -605,14 +605,13 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
                     final boolean postInterestAsOn = false;
 
                     PaymentDetailData paymentDetailData = null;
-                    if (transactionType.isDepositOrWithdrawal()) {
-                        final Long paymentTypeId = JdbcSupport.getLong(rs, "paymentType");
-                        if (paymentTypeId != null) {
-                            final String typeName = rs.getString("paymentTypeName");
-                            final PaymentTypeData paymentTypeData = new PaymentTypeData(paymentTypeId, typeName, null, false, null, null,
-                                    false);
-                            paymentDetailData = new PaymentDetailData(id, paymentTypeData, null, null, null, null, null);
-                        }
+                    // Include holds/releases too — payment type is needed for Card Payment vs Bank Transfer in the app.
+                    final Long paymentTypeId = JdbcSupport.getLong(rs, "paymentType");
+                    if (paymentTypeId != null) {
+                        final String typeName = rs.getString("paymentTypeName");
+                        final PaymentTypeData paymentTypeData = new PaymentTypeData(paymentTypeId, typeName, null, false, null, null,
+                                false);
+                        paymentDetailData = new PaymentDetailData(id, paymentTypeData, null, null, null, null, null);
                     }
 
                     savingsAccountTransactionData = SavingsAccountTransactionData.create(transactionId, transactionType, paymentDetailData,
@@ -1161,19 +1160,18 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
             final boolean postInterestAsOn = rs.getBoolean("postInterestAsOn");
 
             PaymentDetailData paymentDetailData = null;
-            if (transactionType.isDepositOrWithdrawal()) {
-                final Long paymentTypeId = JdbcSupport.getLong(rs, "paymentType");
-                if (paymentTypeId != null) {
-                    final String typeName = rs.getString("paymentTypeName");
-                    final PaymentTypeData paymentType = PaymentTypeData.instance(paymentTypeId, typeName);
-                    final String accountNumber = rs.getString("accountNumber");
-                    final String checkNumber = rs.getString("checkNumber");
-                    final String routingCode = rs.getString("routingCode");
-                    final String receiptNumber = rs.getString("receiptNumber");
-                    final String bankNumber = rs.getString("bankNumber");
-                    paymentDetailData = new PaymentDetailData(id, paymentType, accountNumber, checkNumber, routingCode, receiptNumber,
-                            bankNumber);
-                }
+            // Include holds/releases — not only deposit/withdrawal — so paymentType reaches the app.
+            final Long paymentTypeId = JdbcSupport.getLong(rs, "paymentType");
+            if (paymentTypeId != null) {
+                final String typeName = rs.getString("paymentTypeName");
+                final PaymentTypeData paymentType = PaymentTypeData.instance(paymentTypeId, typeName);
+                final String accountNumber = rs.getString("accountNumber");
+                final String checkNumber = rs.getString("checkNumber");
+                final String routingCode = rs.getString("routingCode");
+                final String receiptNumber = rs.getString("receiptNumber");
+                final String bankNumber = rs.getString("bankNumber");
+                paymentDetailData = new PaymentDetailData(id, paymentType, accountNumber, checkNumber, routingCode, receiptNumber,
+                        bankNumber);
             }
 
             final String currencyCode = rs.getString("currencyCode");

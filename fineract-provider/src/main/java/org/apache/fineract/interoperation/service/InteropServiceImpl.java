@@ -403,6 +403,12 @@ public class InteropServiceImpl implements InteropService {
             savingsAccount.addTransaction(holdTransaction);
 
             savingsAccountRepository.save(savingsAccount);
+
+            // Persist note on hold so the app can show merchant/payee while amount is reserved.
+            String note = request.getNote();
+            if (!StringUtils.isBlank(note)) {
+                noteRepository.save(Note.savingsTransactionNote(savingsAccount, holdTransaction, note));
+            }
         }
 
         return InteropTransferResponseData.build(command.commandId(), request.getTransactionCode(), InteropActionState.ACCEPTED,
