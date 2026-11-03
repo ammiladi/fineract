@@ -54,6 +54,7 @@ import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
+import org.apache.fineract.interoperation.data.ExtensionData;
 import org.apache.fineract.interoperation.data.InteropAccountData;
 import org.apache.fineract.interoperation.data.InteropIdentifierAccountResponseData;
 import org.apache.fineract.interoperation.data.InteropIdentifierRequestData;
@@ -389,8 +390,8 @@ public class InteropServiceImpl implements InteropService {
                 throw new InteropTransferAlreadyOnHoldException(savingsAccount.getExternalId().getValue(), transferCode);
             }
 
-            PaymentDetail paymentDetail = instance(findPaymentType(request.getNote()), savingsAccount.getExternalId().getValue(), null,
-                    getRoutingCode(), transferCode, null);
+            PaymentDetail paymentDetail = instance(findPaymentType(request.getExtensionList()),
+                    savingsAccount.getExternalId().getValue(), null, getRoutingCode(), transferCode, null);
             SavingsAccountTransaction holdTransaction = SavingsAccountTransaction.holdAmount(savingsAccount, savingsAccount.office(),
                     paymentDetail, transactionDate, Money.of(savingsAccount.getCurrency(), total), false);
             MonetaryCurrency accountCurrency = savingsAccount.getCurrency().copy();
@@ -455,12 +456,12 @@ public class InteropServiceImpl implements InteropService {
 
             SavingsTransactionBooleanValues transactionValues = new SavingsTransactionBooleanValues(false, true, true, false, false);
             transaction = savingsAccountService.handleWithdrawal(savingsAccount, fmt, transactionDate, request.getAmount().getAmount(),
-                    instance(findPaymentType(request.getNote()), savingsAccount.getExternalId().getValue(), null, getRoutingCode(),
+                    instance(findPaymentType(request.getExtensionList()), savingsAccount.getExternalId().getValue(), null, getRoutingCode(),
                             transferCode, null),
                     transactionValues, backdatedTxnsAllowedTill);
         } else {
             transaction = savingsAccountService.handleDeposit(savingsAccount, fmt, transactionDate, request.getAmount().getAmount(),
-                    instance(findPaymentType(request.getNote()), savingsAccount.getExternalId().getValue(), null, getRoutingCode(),
+                    instance(findPaymentType(request.getExtensionList()), savingsAccount.getExternalId().getValue(), null, getRoutingCode(),
                             transferCode, null),
                     false, true, backdatedTxnsAllowedTill);
         }
@@ -619,57 +620,71 @@ public class InteropServiceImpl implements InteropService {
         return DateTimeFormatter.ofPattern(dateFormat).withLocale(locale);
     }
 
+    private static final String EXTENSION_PAYMENT_TYPE = "paymentType";
+    private static final String DEFAULT_PAYMENT_TYPE = "Bank Transfer";
+
     PaymentType findPaymentType() {
         return findPaymentType(null);
     }
 
     /**
-     * Prefer Card Payment for Monétique / card notes; otherwise Bank Transfer; else first non-cash type.
+     * Resolve interop payment type from extensionList key {@code paymentType} (catalog name).
+     * Never reads the free-text note (notifications only). Never selects Legacy* types.
+     * Default: Bank Transfer.
      */
-    PaymentType findPaymentType(String note) {
+    PaymentType findPaymentType(List<ExtensionData> extensionList) {
         List<PaymentType> paymentTypes = paymentTypeRepository.findAll();
-        String preferred = isCardSettlementNote(note) ? "Card Payment" : "Bank Transfer";
-        PaymentType named = findPaymentTypeByName(paymentTypes, preferred);
-        if (named == null && "Card Payment".equals(preferred)) {
-            named = findPaymentTypeByName(paymentTypes, "Card");
+        String requested = extensionValue(extensionList, EXTENSION_PAYMENT_TYPE);
+        PaymentType named = findUsablePaymentTypeByName(paymentTypes, requested);
+        if (named == null && requested != null && "Card Payment".equalsIgnoreCase(requested.trim())) {
+            named = findUsablePaymentTypeByName(paymentTypes, "Card");
         }
         if (named != null) {
             return named;
         }
+        named = findUsablePaymentTypeByName(paymentTypes, DEFAULT_PAYMENT_TYPE);
+        if (named != null) {
+            return named;
+        }
         for (PaymentType paymentType : paymentTypes) {
-            if (!paymentType.getIsCashPayment()) {
+            if (isUsableNonCashPaymentType(paymentType)) {
                 return paymentType;
             }
         }
         return null;
     }
 
-    private static PaymentType findPaymentTypeByName(List<PaymentType> paymentTypes, String name) {
+    private static String extensionValue(List<ExtensionData> extensionList, String key) {
+        if (extensionList == null || key == null || key.isBlank()) {
+            return null;
+        }
+        for (ExtensionData extension : extensionList) {
+            if (extension != null && key.equalsIgnoreCase(extension.getKey())) {
+                return extension.getValue();
+            }
+        }
+        return null;
+    }
+
+    private static PaymentType findUsablePaymentTypeByName(List<PaymentType> paymentTypes, String name) {
         if (name == null || name.isBlank() || paymentTypes == null) {
             return null;
         }
         for (PaymentType paymentType : paymentTypes) {
-            if (paymentType != null && name.equalsIgnoreCase(paymentType.getName())) {
+            if (paymentType != null && name.equalsIgnoreCase(paymentType.getName()) && isUsableNonCashPaymentType(paymentType)) {
                 return paymentType;
             }
         }
         return null;
     }
 
-    private static boolean isCardSettlementNote(String note) {
-        if (note == null || note.isBlank()) {
+    /** Cash and Legacy* catalog entries are never used for interop settlements. */
+    private static boolean isUsableNonCashPaymentType(PaymentType paymentType) {
+        if (paymentType == null || Boolean.TRUE.equals(paymentType.getIsCashPayment())) {
             return false;
         }
-        String blob = note.toLowerCase(Locale.ROOT);
-        // Require explicit card / Monétique signals — never treat plain GSMA/Mojaloop cash-in as card.
-        return blob.contains("\"type\":\"card\"")
-                || blob.contains("\"type\": \"card\"")
-                || blob.contains("\"paymenttype\":\"card payment\"")
-                || blob.contains("\"paymenttype\": \"card payment\"")
-                || blob.contains("card payment")
-                || blob.contains("card refund")
-                || blob.contains("monétique")
-                || blob.contains("monetique");
+        String name = paymentType.getName();
+        return name == null || !name.toLowerCase(Locale.ROOT).startsWith("legacy");
     }
 
     private SavingsAccountTransaction findTransaction(SavingsAccount savingsAccount, String transactionCode, Integer transactionTypeValue) {
