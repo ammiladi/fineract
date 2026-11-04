@@ -402,12 +402,16 @@ public class InteropServiceImpl implements InteropService {
             savingsAccount.holdAmount(total);
             savingsAccount.addTransaction(holdTransaction);
 
+            // Persist hold before note (same pattern as releaseAmount). Note.savingsTransaction has no
+            // cascade; with EclipseLink, saveAndFlush(account) alone still leaves the tx transient and
+            // PREPARE fails with cascade PERSIST — auth never AUTHORIZED, capture returns 409.
+            SavingsAccountTransaction persistedHold = savingsAccountTransactionRepository.saveAndFlush(holdTransaction);
             savingsAccountRepository.save(savingsAccount);
 
             // Persist note on hold so the app can show merchant/payee while amount is reserved.
             String note = request.getNote();
             if (!StringUtils.isBlank(note)) {
-                noteRepository.save(Note.savingsTransactionNote(savingsAccount, holdTransaction, note));
+                noteRepository.save(Note.savingsTransactionNote(savingsAccount, persistedHold, note));
             }
         }
 
