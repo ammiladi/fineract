@@ -2,6 +2,7 @@ name: Fineract Publish to DockerHub
 on:
   push:
     branches:
+      - main
       - develop
       - 1.*
     tags:
@@ -35,15 +36,17 @@ jobs:
           echo "long_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
         id: git_hashes
 
-      - name: Build the Apache Fineract image
+      - name: Build the Nexus Bank Fineract image
         run:  |
           TAGS=${{ github.ref_name }}
-          if [ "${{ github.ref_name }}" == "develop" ]; then
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            TAGS="latest,${{ steps.git_hashes.outputs.short_hash }},1.14.1"
+          elif [ "${{ github.ref_name }}" == "develop" ]; then
             TAGS="$TAGS,${{ steps.git_hashes.outputs.short_hash }},${{ steps.git_hashes.outputs.long_hash }}"
           fi
           ./gradlew --no-daemon --console=plain :fineract-provider:jib -x test -x cucumber \
             -Djib.to.auth.username=${{secrets.DOCKERHUB_USER}} \
             -Djib.to.auth.password=${{secrets.DOCKERHUB_TOKEN}} \
             -Djib.from.platforms=linux/amd64,linux/arm64 \
-            -Djib.to.image=${{DOCKERHUB_REGISTRY}}/fineract \
+            -Djib.to.image=docker.io/nexusbank/fineract \
             -Djib.to.tags=$TAGS
